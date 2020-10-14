@@ -1,25 +1,37 @@
 language: c
 sudo: required
-dist: trusty
+dist: xenial
 matrix:
   include:
     - compiler: gcc
-      env: COVERAGE=yes CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Coverage"
+      env: EXTTESTS=yes
     - compiler: gcc
-      env: ARCH_CFLAGS="-m32"
+      env: CFLAGS="--coverage" LDFLAGS"=--coverage" COVERAGE=yes
     - compiler: clang
-      env: CFLAGS="-Weverything"
+      env: EXTTESTS=yes
     - compiler: clang
-      env: CFLAGS="-Weverything" ARCH_CFLAGS="-m32"
+      env: CFLAGS="-fsanitize=address,undefined,integer -fno-omit-frame-pointer -fno-sanitize-recover=all" LDFLAGS="-fsanitize=address,undefined,integer"
 before_install:
-  - sudo apt-get update -qq
-  - sudo apt-get install -qq gcc-multilib
   - if [ -n "${COVERAGE}" ]; then pip install --user pyyaml cpp-coveralls; fi
+  - export CFLAGS="$CFLAGS -Werror -Wall -Wextra -pedantic"
+  - export CXXFLAGS="$CFLAGS"
 script:
-  - cmake . -DCMAKE_VERBOSE_MAKEFILE=yes -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_C_FLAGS="-Werror -Wall -Wextra -pedantic ${CFLAGS} ${ARCH_CFLAGS}" ${CMAKE_FLAGS}
-  - make
-  - make test
+  - cmake . -DCMAKE_VERBOSE_MAKEFILE=yes -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug
+  - cmake --build .
+  - ctest -V
   - sudo make install
-  - if [ -z "${COVERAGE}" ]; then ${CC} version_compare/version_compare.c ${ARCH_CFLAGS} `pkg-config --libs --cflags libversion` -o test-installation; fi
+  - |-
+    if [ -n "${EXTTESTS}" ]; then
+        for exttest in exttests/*; do
+            (
+                echo "Running exttest $exttest..."
+                cd $exttest
+                if [ -e CMakeLists.txt ]; then
+                    cmake . >/dev/null 2>&1 || cmake .
+                fi
+                make >/dev/null 2>&1 || make
+            )
+        done
+    fi
 after_success:
   - if [ -n "${COVERAGE}" ]; then coveralls -i libversion; fi

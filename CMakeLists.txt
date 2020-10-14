@@ -1,28 +1,19 @@
-PROJECT(libversion)
+cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
 
 # meta
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+project(libversion VERSION 3.0.1)
 
-SET(VERSION_MAJOR 1)
-SET(VERSION_MINOR 2)
-SET(VERSION_PATCH 0)
-
-SET(VERSION "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
-
-SET(PKGCONFIGDIR lib/pkgconfig CACHE STRING "directory where to install pkg-config files")
-IF(CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR CMAKE_SYSTEM_NAME MATCHES "DragonFly")
+set(PKGCONFIGDIR lib/pkgconfig CACHE STRING "directory where to install pkg-config files")
+if(CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR CMAKE_SYSTEM_NAME MATCHES "DragonFly")
 	SET(PKGCONFIGDIR libdata/pkgconfig)
-ENDIF(CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR CMAKE_SYSTEM_NAME MATCHES "DragonFly")
-
-INCLUDE_DIRECTORIES(BEFORE ${PROJECT_SOURCE_DIR})
-
-SET(CMAKE_C_FLAGS_COVERAGE "${CMAKE_C_FLAGS_DEBUG} --coverage")
-SET(CMAKE_EXE_LINKER_FLAGS_COVERAGE "${CMAKE_EXE_LINKER_FLAGS_DEBUG} --coverage")
-SET(CMAKE_SHARED_LINKER_FLAGS_COVERAGE "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} --coverage")
-
-ENABLE_TESTING()
+endif()
 
 # subdirs
-ADD_SUBDIRECTORY(libversion)
-ADD_SUBDIRECTORY(tests)
-ADD_SUBDIRECTORY(version_compare)
+enable_testing()
+
+add_subdirectory(libversion)
+add_subdirectory(tests)
+
+if(UNIX)
+	add_subdirectory(utils)
+endif()

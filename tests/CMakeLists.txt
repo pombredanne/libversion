@@ -1,6 +1,6 @@
-ADD_EXECUTABLE(compare_test compare_test.c)
-TARGET_LINK_LIBRARIES(compare_test version)
-ADD_TEST(compare_test compare_test)
+add_executable(compare_test compare_test.c)
+target_link_libraries(compare_test libversion)
+add_test(compare_test compare_test)
 
-ADD_EXECUTABLE(compare_fuzzer compare_fuzzer.c)
-TARGET_LINK_LIBRARIES(compare_fuzzer version)
+add_executable(compare_fuzzer compare_fuzzer.c)
+target_link_libraries(compare_fuzzer libversion)

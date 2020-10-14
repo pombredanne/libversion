@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Dmitry Marakasov <amdmi3@amdmi3.ru>
+ * Copyright (c) 2017-2019 Dmitry Marakasov <amdmi3@amdmi3.ru>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,25 +20,11 @@
  * THE SOFTWARE.
  */
 
-#include <stdio.h>
+#ifndef LIBVERSION_PRIVATE_COMPARE_H
+#define LIBVERSION_PRIVATE_COMPARE_H
 
-#include <libversion/compare.h>
+#include <libversion/private/component.h>
 
-int main(int argc, char** argv) {
-	int result;
+int compare_components(const component_t* u1, const component_t* u2);
 
-	if (argc != 3) {
-		fprintf(stderr, "Usage: %s version1 version2\n", argv[0]);
-		return 1;
-	}
-
-	result = version_compare_simple(argv[1], argv[2]);
-	if (result < 0)
-		printf("<\n");
-	else if (result > 0)
-		printf(">\n");
-	else
-		printf("=\n");
-
-	return 0;
-}
+#endif /* LIBVERSION_PRIVATE_COMPARE_H */

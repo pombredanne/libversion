@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Dmitry Marakasov <amdmi3@amdmi3.ru>
+ * Copyright (c) 2017-2018 Dmitry Marakasov <amdmi3@amdmi3.ru>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,7 +20,9 @@
  * THE SOFTWARE.
  */
 
-#include <libversion/compare.h>
+#define LIBVERSION_NO_DEPRECATED /* disable deprecated APIs */
+
+#include <libversion/version.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -33,28 +35,34 @@ static char comparison_to_char(int comp) {
 	return '=';
 }
 
-static int version_test(const char* v1, const char* v2, int expected) {
-	int result = version_compare_simple(v1, v2);
+static int version_test(const char* v1, const char* v2, int flags1, int flags2, int expected) {
+	int result;
 
-	if (result != expected) {
-		fprintf(stderr, "[FAIL] \"%s\" %c \"%s\": got %c\n", v1, comparison_to_char(expected), v2, comparison_to_char(result));
-		return 1;
+	if (flags1 == 0 && flags2 == 0) {
+		result = version_compare2(v1, v2);
 	} else {
-		fprintf(stderr, "[ OK ] \"%s\" %c \"%s\"\n", v1, comparison_to_char(expected), v2);
+		result = version_compare4(v1, v2, flags1, flags2);
+	}
+
+	if (result == expected) {
+		fprintf(stderr, "[ OK ] \"%s\" (0x%x) %c \"%s\" (0x%x)\n", v1, flags1, comparison_to_char(expected), v2, flags2);
 		return 0;
+	} else {
+		fprintf(stderr, "[FAIL] \"%s\" (0x%x) %c \"%s\" (0x%x): got %c\n", v1, flags1, comparison_to_char(expected), v2, flags2, comparison_to_char(result));
+		return 1;
 	}
 }
 
-static int version_test_symmetrical(const char* v1, const char* v2, int expected) {
-	if (expected == 0 && strcmp(v1, v2) == 0)
-		return version_test(v1, v2, 0);
+static int version_test_symmetrical_flags(const char* v1, const char* v2, int flags1, int flags2, int expected) {
+	return version_test(v1, v2, flags1, flags2, expected) + version_test(v2, v1, flags2, flags1, -expected);
+}
 
-	return version_test(v1, v2, expected) + version_test(v2, v1, -expected);
+static int version_test_symmetrical(const char* v1, const char* v2, int expected) {
+	return version_test_symmetrical_flags(v1, v2, 0, 0, expected);
 }
 
 int main() {
 	int errors = 0;
-	int result;
 
 	fprintf(stderr, "Test group: equality\n");
 	errors += version_test_symmetrical("0", "0", 0);
@@ -90,31 +98,12 @@ int main() {
 	errors += version_test_symmetrical("10.0.0", "100.0.0", -1);
 	errors += version_test_symmetrical("10.10000.10000", "11.0.0", -1);
 
-	fprintf(stderr, "\nTest group: long numbers comparisons\n");
+	fprintf(stderr, "\nTest group: long numbers\n");
 	errors += version_test_symmetrical("20160101", "20160102", -1);
-	errors += version_test_symmetrical("9999999999999999", "10000000000000000", -1);
+	errors += version_test_symmetrical("999999999999999999", "1000000000000000000", -1);
 
-	fprintf(stderr, "\nTest group: too long numbers\n");
-	/* if it won't fit into 64bit there's nothing we can do, but at least it should not invert compariosn order */
-	result = version_compare_simple("99999999999999999999999999999999999998", "99999999999999999999999999999999999999");
-	if (result < 0) {
-		fprintf(stderr, "[ OK ] very long versions compared as normal ones\n");
-	} else if (result == 0) {
-		fprintf(stderr, "[SKIP] very long versions compared as equal\n");
-	} else {
-		fprintf(stderr, "[FAIL] very long versions compared incorrectly\n");
-		errors += 1;
-	}
-
-	result = version_compare_simple("99999999999999999999999999999999999999", "99999999999999999999999999999999999998");
-	if (result < 0) {
-		fprintf(stderr, "[ OK ] very long versions compared as normal ones\n");
-	} else if (result == 0) {
-		fprintf(stderr, "[SKIP] very long versions compared as equal\n");
-	} else {
-		fprintf(stderr, "[FAIL] very long versions compared incorrectly\n");
-		errors += 1;
-	}
+	fprintf(stderr, "\nTest group: very long numbers\n");
+	errors += version_test_symmetrical("99999999999999999999999999999999999998", "99999999999999999999999999999999999999", -1);
 
 	fprintf(stderr, "\nTest group: letter addendum\n");
 	errors += version_test_symmetrical("1.0", "1.0a", -1);
@@ -156,19 +145,12 @@ int main() {
 	errors += version_test_symmetrical(".,:;~+-_", "0", 0);
 
 	fprintf(stderr, "\nTest group: empty string\n");
+	errors += version_test_symmetrical("", "", 0);
 	errors += version_test_symmetrical("", "0", 0);
 	errors += version_test_symmetrical("", "1", -1);
 
 	fprintf(stderr, "\nTest group: prerelease sequence\n");
-	errors += version_test_symmetrical("1.0.alpha1", "1.0.alpha2", -1);
-	errors += version_test_symmetrical("1.0.alpha2", "1.0.beta1", -1);
-	errors += version_test_symmetrical("1.0.beta1", "1.0.beta2", -1);
-	errors += version_test_symmetrical("1.0.beta2", "1.0.rc1", -1);
-	errors += version_test_symmetrical("1.0.beta2", "1.0.pre1", -1);
-	errors += version_test_symmetrical("1.0.rc1", "1.0", -1);
-	errors += version_test_symmetrical("1.0.pre1", "1.0", -1);
 	/* XXX: is rc/pre ordering defined? */
-
 	errors += version_test_symmetrical("1.0alpha1", "1.0alpha2", -1);
 	errors += version_test_symmetrical("1.0alpha2", "1.0beta1", -1);
 	errors += version_test_symmetrical("1.0beta1", "1.0beta2", -1);
@@ -177,45 +159,153 @@ int main() {
 	errors += version_test_symmetrical("1.0rc1", "1.0", -1);
 	errors += version_test_symmetrical("1.0pre1", "1.0", -1);
 
+	errors += version_test_symmetrical("1.0.alpha1", "1.0.alpha2", -1);
+	errors += version_test_symmetrical("1.0.alpha2", "1.0.beta1", -1);
+	errors += version_test_symmetrical("1.0.beta1", "1.0.beta2", -1);
+	errors += version_test_symmetrical("1.0.beta2", "1.0.rc1", -1);
+	errors += version_test_symmetrical("1.0.beta2", "1.0.pre1", -1);
+	errors += version_test_symmetrical("1.0.rc1", "1.0", -1);
+	errors += version_test_symmetrical("1.0.pre1", "1.0", -1);
+
+	errors += version_test_symmetrical("1.0alpha.1", "1.0alpha.2", -1);
+	errors += version_test_symmetrical("1.0alpha.2", "1.0beta.1", -1);
+	errors += version_test_symmetrical("1.0beta.1", "1.0beta.2", -1);
+	errors += version_test_symmetrical("1.0beta.2", "1.0rc.1", -1);
+	errors += version_test_symmetrical("1.0beta.2", "1.0pre.1", -1);
+	errors += version_test_symmetrical("1.0rc.1", "1.0", -1);
+	errors += version_test_symmetrical("1.0pre.1", "1.0", -1);
+
+	errors += version_test_symmetrical("1.0.alpha.1", "1.0.alpha.2", -1);
+	errors += version_test_symmetrical("1.0.alpha.2", "1.0.beta.1", -1);
+	errors += version_test_symmetrical("1.0.beta.1", "1.0.beta.2", -1);
+	errors += version_test_symmetrical("1.0.beta.2", "1.0.rc.1", -1);
+	errors += version_test_symmetrical("1.0.beta.2", "1.0.pre.1", -1);
+	errors += version_test_symmetrical("1.0.rc.1", "1.0", -1);
+	errors += version_test_symmetrical("1.0.pre.1", "1.0", -1);
+
 	fprintf(stderr, "\nTest group: long word awareness\n");
 	/* this should not be treated as 1.0a-1 */
 	errors += version_test_symmetrical("1.0alpha-1", "0.9", 1);
 	errors += version_test_symmetrical("1.0alpha-1", "1.0", -1);
+	errors += version_test_symmetrical("1.0alpha-1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0alpha-1", "1.1", -1);
 
 	errors += version_test_symmetrical("1.0beta-1", "0.9", 1);
 	errors += version_test_symmetrical("1.0beta-1", "1.0", -1);
+	errors += version_test_symmetrical("1.0beta-1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0beta-1", "1.1", -1);
 
 	errors += version_test_symmetrical("1.0pre-1", "0.9", 1);
 	errors += version_test_symmetrical("1.0pre-1", "1.0", -1);
+	errors += version_test_symmetrical("1.0pre-1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0pre-1", "1.1", -1);
 
 	errors += version_test_symmetrical("1.0prerelease-1", "0.9", 1);
 	errors += version_test_symmetrical("1.0prerelease-1", "1.0", -1);
+	errors += version_test_symmetrical("1.0prerelease-1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0prerelease-1", "1.1", -1);
 
 	errors += version_test_symmetrical("1.0rc-1", "0.9", 1);
 	errors += version_test_symmetrical("1.0rc-1", "1.0", -1);
+	errors += version_test_symmetrical("1.0rc-1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0rc-1", "1.1", -1);
 
-	fprintf(stderr, "\nTest group: patch word awareness\n");
+	fprintf(stderr, "\nTest group: post-release keyword awareness\n");
 	/* this should not be treated as 1.0a-1 */
 	errors += version_test_symmetrical("1.0patch1", "0.9", 1);
 	errors += version_test_symmetrical("1.0patch1", "1.0", 1);
+	errors += version_test_symmetrical("1.0patch1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0patch1", "1.1", -1);
 
 	errors += version_test_symmetrical("1.0.patch1", "0.9", 1);
 	errors += version_test_symmetrical("1.0.patch1", "1.0", 1);
+	errors += version_test_symmetrical("1.0.patch1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0.patch1", "1.1", -1);
 
 	errors += version_test_symmetrical("1.0patch.1", "0.9", 1);
 	errors += version_test_symmetrical("1.0patch.1", "1.0", 1);
+	errors += version_test_symmetrical("1.0patch.1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0patch.1", "1.1", -1);
 
 	errors += version_test_symmetrical("1.0.patch.1", "0.9", 1);
 	errors += version_test_symmetrical("1.0.patch.1", "1.0", 1);
+	errors += version_test_symmetrical("1.0.patch.1", "1.0.1", -1);
 	errors += version_test_symmetrical("1.0.patch.1", "1.1", -1);
+
+	errors += version_test_symmetrical("1.0post1", "0.9", 1);
+	errors += version_test_symmetrical("1.0post1", "1.0", 1);
+	errors += version_test_symmetrical("1.0post1", "1.0.1", -1);
+	errors += version_test_symmetrical("1.0post1", "1.1", -1);
+
+	errors += version_test_symmetrical("1.0postanythinggoeshere1", "0.9", 1);
+	errors += version_test_symmetrical("1.0postanythinggoeshere1", "1.0", 1);
+	errors += version_test_symmetrical("1.0postanythinggoeshere1", "1.0.1", -1);
+	errors += version_test_symmetrical("1.0postanythinggoeshere1", "1.1", -1);
+
+	errors += version_test_symmetrical("1.0pl1", "0.9", 1);
+	errors += version_test_symmetrical("1.0pl1", "1.0", 1);
+	errors += version_test_symmetrical("1.0pl1", "1.0.1", -1);
+	errors += version_test_symmetrical("1.0pl1", "1.1", -1);
+
+	errors += version_test_symmetrical("1.0errata1", "0.9", 1);
+	errors += version_test_symmetrical("1.0errata1", "1.0", 1);
+	errors += version_test_symmetrical("1.0errata1", "1.0.1", -1);
+	errors += version_test_symmetrical("1.0errata1", "1.1", -1);
+
+	fprintf(stderr, "\nTest group: p is patch flag\n");
+	errors += version_test_symmetrical_flags("1.0p1", "1.0p1", 0, 0, 0);
+	errors += version_test_symmetrical_flags("1.0p1", "1.0p1", VERSIONFLAG_P_IS_PATCH, VERSIONFLAG_P_IS_PATCH, 0);
+	errors += version_test_symmetrical_flags("1.0p1", "1.0p1", VERSIONFLAG_P_IS_PATCH, 0, 1);
+	errors += version_test_symmetrical_flags("1.0p1", "1.0p1", 0, VERSIONFLAG_P_IS_PATCH, -1);
+
+	errors += version_test_symmetrical_flags("1.0", "1.0p1", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0p1", VERSIONFLAG_P_IS_PATCH, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0p1", 0, VERSIONFLAG_P_IS_PATCH, -1);
+
+	errors += version_test_symmetrical_flags("1.0", "1.0.p1", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0.p1", VERSIONFLAG_P_IS_PATCH, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0.p1", 0, VERSIONFLAG_P_IS_PATCH, -1);
+
+	errors += version_test_symmetrical_flags("1.0", "1.0.p.1", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0.p.1", VERSIONFLAG_P_IS_PATCH, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0.p.1", 0, VERSIONFLAG_P_IS_PATCH, -1);
+
+	/* this case is not affected */
+	errors += version_test_symmetrical_flags("1.0", "1.0p.1", 0, 0, -1);
+	errors += version_test_symmetrical_flags("1.0", "1.0p.1", VERSIONFLAG_P_IS_PATCH, 0, -1);
+	errors += version_test_symmetrical_flags("1.0", "1.0p.1", 0, VERSIONFLAG_P_IS_PATCH, -1);
+
+	fprintf(stderr, "\nTest group: any is patch flag\n");
+	errors += version_test_symmetrical_flags("1.0a1", "1.0a1", 0, 0, 0);
+	errors += version_test_symmetrical_flags("1.0a1", "1.0a1", VERSIONFLAG_ANY_IS_PATCH, VERSIONFLAG_ANY_IS_PATCH, 0);
+	errors += version_test_symmetrical_flags("1.0a1", "1.0a1", VERSIONFLAG_ANY_IS_PATCH, 0, 1);
+	errors += version_test_symmetrical_flags("1.0a1", "1.0a1", 0, VERSIONFLAG_ANY_IS_PATCH, -1);
+
+	errors += version_test_symmetrical_flags("1.0", "1.0a1", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0a1", VERSIONFLAG_ANY_IS_PATCH, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0a1", 0, VERSIONFLAG_ANY_IS_PATCH, -1);
+
+	errors += version_test_symmetrical_flags("1.0", "1.0.a1", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0.a1", VERSIONFLAG_ANY_IS_PATCH, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0.a1", 0, VERSIONFLAG_ANY_IS_PATCH, -1);
+
+	errors += version_test_symmetrical_flags("1.0", "1.0.a.1", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0.a.1", VERSIONFLAG_ANY_IS_PATCH, 0, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0.a.1", 0, VERSIONFLAG_ANY_IS_PATCH, -1);
+
+	/* this case is not affected */
+	errors += version_test_symmetrical_flags("1.0", "1.0a.1", 0, 0, -1);
+	errors += version_test_symmetrical_flags("1.0", "1.0a.1", VERSIONFLAG_ANY_IS_PATCH, 0, -1);
+	errors += version_test_symmetrical_flags("1.0", "1.0a.1", 0, VERSIONFLAG_ANY_IS_PATCH, -1);
+
+	fprintf(stderr, "\nTest group: p/patch compatibility\n");
+	errors += version_test_symmetrical_flags("1.0p1", "1.0pre1", 0, 0, 0);
+	errors += version_test_symmetrical_flags("1.0p1", "1.0patch1", 0, 0, -1);
+	errors += version_test_symmetrical_flags("1.0p1", "1.0post1", 0, 0, -1);
+
+	errors += version_test_symmetrical_flags("1.0p1", "1.0pre1", VERSIONFLAG_P_IS_PATCH, VERSIONFLAG_P_IS_PATCH, 1);
+	errors += version_test_symmetrical_flags("1.0p1", "1.0patch1", VERSIONFLAG_P_IS_PATCH, VERSIONFLAG_P_IS_PATCH, 0);
+	errors += version_test_symmetrical_flags("1.0p1", "1.0post1", VERSIONFLAG_P_IS_PATCH, VERSIONFLAG_P_IS_PATCH, 0);
 
 	fprintf(stderr, "\nTest group: prerelease words without numbers\n");
 	errors += version_test_symmetrical("1.0alpha", "1.0", -1);
@@ -235,6 +325,62 @@ int main() {
 
 	errors += version_test_symmetrical("1.0patch", "1.0", 1);
 	errors += version_test_symmetrical("1.0.patch", "1.0", 1);
+
+	fprintf(stderr, "\nTest group: release bounds\n");
+	errors += version_test_symmetrical_flags("0.99999", "1.0", 0, 0, -1);
+	errors += version_test_symmetrical_flags("1.0alpha", "1.0", 0, 0, -1);
+	errors += version_test_symmetrical_flags("1.0alpha0", "1.0", 0, 0, -1);
+	errors += version_test_symmetrical_flags("1.0", "1.0", 0, 0, 0);
+	errors += version_test_symmetrical_flags("1.0patch", "1.0", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.0patch0", "1.0", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.0.1", "1.0", 0, 0, 1);
+	errors += version_test_symmetrical_flags("1.1", "1.0", 0, 0, 1);
+
+	errors += version_test_symmetrical_flags("0.99999", "1.0", 0, VERSIONFLAG_LOWER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.0alpha", "1.0", 0, VERSIONFLAG_LOWER_BOUND, 1);
+	errors += version_test_symmetrical_flags("1.0alpha0", "1.0", 0, VERSIONFLAG_LOWER_BOUND, 1);
+	errors += version_test_symmetrical_flags("1.0", "1.0", 0, VERSIONFLAG_LOWER_BOUND, 1);
+	errors += version_test_symmetrical_flags("1.0patch", "1.0", 0, VERSIONFLAG_LOWER_BOUND, 1);
+	errors += version_test_symmetrical_flags("1.0patch0", "1.0", 0, VERSIONFLAG_LOWER_BOUND, 1);
+	errors += version_test_symmetrical_flags("1.0a", "1.0", 0, VERSIONFLAG_LOWER_BOUND, 1);
+	errors += version_test_symmetrical_flags("1.0.1", "1.0", 0, VERSIONFLAG_LOWER_BOUND, 1);
+	errors += version_test_symmetrical_flags("1.1", "1.0", 0, VERSIONFLAG_LOWER_BOUND, 1);
+
+	errors += version_test_symmetrical_flags("0.99999", "1.0", 0, VERSIONFLAG_UPPER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.0alpha", "1.0", 0, VERSIONFLAG_UPPER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.0alpha0", "1.0", 0, VERSIONFLAG_UPPER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.0", "1.0", 0, VERSIONFLAG_UPPER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.0patch", "1.0", 0, VERSIONFLAG_UPPER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.0patch0", "1.0", 0, VERSIONFLAG_UPPER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.0a", "1.0", 0, VERSIONFLAG_UPPER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.0.1", "1.0", 0, VERSIONFLAG_UPPER_BOUND, -1);
+	errors += version_test_symmetrical_flags("1.1", "1.0", 0, VERSIONFLAG_UPPER_BOUND, 1);
+
+	errors += version_test_symmetrical_flags("1.0", "1.0", VERSIONFLAG_LOWER_BOUND, VERSIONFLAG_LOWER_BOUND, 0);
+	errors += version_test_symmetrical_flags("1.0", "1.0", VERSIONFLAG_UPPER_BOUND, VERSIONFLAG_UPPER_BOUND, 0);
+	errors += version_test_symmetrical_flags("1.0", "1.0", VERSIONFLAG_LOWER_BOUND, VERSIONFLAG_UPPER_BOUND, -1);
+
+	errors += version_test_symmetrical_flags("1.0", "1.1", VERSIONFLAG_UPPER_BOUND, VERSIONFLAG_LOWER_BOUND, -1);
+
+	errors += version_test_symmetrical_flags("0", "0.0", VERSIONFLAG_UPPER_BOUND, VERSIONFLAG_UPPER_BOUND, 1);
+	errors += version_test_symmetrical_flags("0", "0.0", VERSIONFLAG_LOWER_BOUND, VERSIONFLAG_LOWER_BOUND, -1);
+
+	fprintf(stderr, "\nTest group: uniform component splitting\n");
+	errors += version_test_symmetrical("1.0alpha1", "1.0alpha1", 0);
+	errors += version_test_symmetrical("1.0alpha1", "1.0.alpha1", 0);
+	errors += version_test_symmetrical("1.0alpha1", "1.0alpha.1", 0);
+	errors += version_test_symmetrical("1.0alpha1", "1.0.alpha.1", 0);
+
+	errors += version_test_symmetrical("1.0patch1", "1.0patch1", 0);
+	errors += version_test_symmetrical("1.0patch1", "1.0.patch1", 0);
+	errors += version_test_symmetrical("1.0patch1", "1.0patch.1", 0);
+	errors += version_test_symmetrical("1.0patch1", "1.0.patch.1", 0);
+
+	/* controversial - TBD
+	fprintf(stderr, "\nTest group: letter vs. numeric component ordering\n");
+	errors += version_test_symmetrical("1.0", "1.0a", -1);
+	errors += version_test_symmetrical("1.0a", "1.0.1", -1);
+	*/
 
 	if (errors) {
 		fprintf(stderr, "\n%d test(s) failed!\n", errors);
